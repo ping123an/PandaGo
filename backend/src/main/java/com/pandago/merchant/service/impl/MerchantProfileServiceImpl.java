@@ -3,19 +3,32 @@ package com.pandago.merchant.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.pandago.common.api.ResultCode;
+import com.pandago.common.config.UploadProperties;
 import com.pandago.common.enums.AuditStatus;
 import com.pandago.common.enums.RoleCode;
 import com.pandago.common.exception.BusinessException;
+import com.pandago.common.service.PhoneLinkService;
+import com.pandago.common.util.UploadedImageValidator;
 import com.pandago.merchant.dto.MerchantProfileUpdateDTO;
 import com.pandago.merchant.entity.MerchantProfile;
 import com.pandago.merchant.mapper.MerchantProfileMapper;
 import com.pandago.merchant.service.MerchantProfileService;
+import com.pandago.merchant.vo.MerchantLogoUploadVO;
 import com.pandago.merchant.vo.MerchantProfileVO;
 import com.pandago.security.SecurityUtils;
 import com.pandago.user.entity.User;
 import com.pandago.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 /**
  * 商家店铺资料业务实现（V9）。
@@ -26,11 +39,15 @@ import org.springframework.stereotype.Service;
  * 3. 若该商家尚无资料（迁移后新建的商家账号），首次查询自动创建一份默认资料。</p>
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class MerchantProfileServiceImpl implements MerchantProfileService {
 
     private final MerchantProfileMapper profileMapper;
     private final UserMapper userMapper;
+    private final PhoneLinkService phoneLinkService;
+    private final UploadedImageValidator imageValidator;
+    private final UploadProperties uploadProperties;
 
     @Override
     public MerchantProfileVO getMyProfile() {
@@ -39,8 +56,11 @@ public class MerchantProfileServiceImpl implements MerchantProfileService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public MerchantProfileVO updateMyProfile(MerchantProfileUpdateDTO dto) {
+        Long userId = currentMerchantId();
         MerchantProfile profile = requireMyProfile();
+        String contactPhone = blankToNull(dto.getContactPhone());
 
         // 只更新白名单字段；店铺 ID / 所属用户 / 经营状态 / 审核状态一律不动
         // 全部白名单字段用 LambdaUpdateWrapper 显式 set：尤其是 logo/description 等可清空字段，
@@ -50,11 +70,60 @@ public class MerchantProfileServiceImpl implements MerchantProfileService {
                 .set(MerchantProfile::getStoreName, dto.getStoreName().trim())
                 .set(MerchantProfile::getDescription, blankToNull(dto.getDescription()))
                 .set(MerchantProfile::getContactName, blankToNull(dto.getContactName()))
-                .set(MerchantProfile::getContactPhone, blankToNull(dto.getContactPhone()))
+                .set(MerchantProfile::getContactPhone, contactPhone)
                 .set(MerchantProfile::getAddress, blankToNull(dto.getAddress()))
                 .set(MerchantProfile::getLogo, blankToNull(dto.getLogo()));
         profileMapper.update(null, wrapper);
+
+        // 手机号双向联动：商家资料与个人中心维护的是同一个联系电话，
+        // DTO 已限定为手机号，这里同步写入 user.phone；清空也同步。
+        if (!phoneLinkService.syncStorePhoneToUser(userId, contactPhone)) {
+            log.warn("商家 {} 提交了非手机号格式的联系电话，已拒绝同步", userId);
+        }
         return toVO(profileMapper.selectById(profile.getId()));
+    }
+
+    /**
+     * 上传店铺头像：校验逻辑复用用户头像的 {@link UploadedImageValidator}，
+     * 身份只取 SecurityContext，不接受 merchantId / userId，因此不能改其他店铺。
+     */
+    @Override
+    public MerchantLogoUploadVO uploadLogo(MultipartFile file) {
+        Long userId = currentMerchantId();
+        MerchantProfile profile = requireMyProfile();
+
+        String extension = imageValidator.validate(file);
+        String filename = UUID.randomUUID().toString().replace("-", "") + "." + extension;
+        Path avatarDir = uploadProperties.avatarDirPath().normalize();
+        Path target = avatarDir.resolve(filename).normalize();
+        if (!target.startsWith(avatarDir)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "店铺头像保存路径不合法");
+        }
+
+        try {
+            Files.createDirectories(avatarDir);
+            Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            log.error("店铺头像文件保存失败, userId={}", userId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "店铺头像保存失败，请稍后重试");
+        }
+
+        String logoUrl = "/uploads/avatars/" + filename;
+        try {
+            LambdaUpdateWrapper<MerchantProfile> wrapper = new LambdaUpdateWrapper<>();
+            wrapper.eq(MerchantProfile::getId, profile.getId()).set(MerchantProfile::getLogo, logoUrl);
+            profileMapper.update(null, wrapper);
+        } catch (Exception e) {
+            try {
+                Files.deleteIfExists(target);
+            } catch (IOException ignored) {
+                log.warn("清理失败店铺头像文件失败: {}", target);
+            }
+            throw e;
+        }
+
+        log.info("商家 {} 更新店铺头像: {}", userId, logoUrl);
+        return new MerchantLogoUploadVO(logoUrl);
     }
 
     /** 当前商家资料：不存在则按当前用户创建默认资料（懒初始化，兼容迁移后新建账号） */

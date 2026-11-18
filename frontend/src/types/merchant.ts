@@ -54,6 +54,11 @@ export interface MerchantProfile {
   updatedAt: string
 }
 
+/** 店铺头像上传响应：后端返回的相对 URL，写入 MerchantProfile.logo */
+export interface MerchantLogoUploadResult {
+  logoUrl: string
+}
+
 /** 资料修改：白名单字段，与后端 MerchantProfileUpdateDTO 对应 */
 export interface MerchantProfileUpdatePayload {
   storeName: string

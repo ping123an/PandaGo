@@ -23,6 +23,8 @@ frontend/.env.*.local
 frontend/coverage/
 frontend/.esbuild-tmp/
 frontend/.tmp-build/
+frontend/.build-tmp/
+docs/.tmp-phone-logo/
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/pnpm-debug.log*

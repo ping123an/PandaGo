@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import markSrc from '@/assets/images/brand/pandago-mark.svg'
-import { getMerchantProfile, updateMerchantProfile } from '@/api/merchant'
+import { getMerchantProfile, updateMerchantProfile, uploadMerchantLogo } from '@/api/merchant'
 import type { MerchantProfile, MerchantProfileUpdatePayload } from '@/types/merchant'
 
 /**
@@ -52,6 +52,24 @@ export const useMerchantStore = defineStore('merchant', () => {
     return data.data
   }
 
+  /**
+   * 上传店铺头像：后端写入 merchant_profile.logo 后，
+   * 先立即更新全局状态让所有页面同步，再从后端回读确保与数据库一致。
+   */
+  async function uploadLogo(file: File): Promise<MerchantProfile> {
+    const { data } = await uploadMerchantLogo(file)
+    if (!profile.value) {
+      await fetchProfile(true)
+    } else {
+      profile.value = { ...profile.value, logo: data.data.logoUrl }
+      await fetchProfile(true)
+    }
+    if (!profile.value) {
+      throw new Error('上传成功但店铺资料未返回，请刷新页面')
+    }
+    return profile.value
+  }
+
   /** 退出登录 / 切换账号时清理，避免下一账号看到上一账号的店铺头像 */
   function reset(): void {
     profile.value = null
@@ -59,5 +77,5 @@ export const useMerchantStore = defineStore('merchant', () => {
     pending = null
   }
 
-  return { profile, loading, logoUrl, storeName, fetchProfile, updateProfile, reset }
+  return { profile, loading, logoUrl, storeName, fetchProfile, updateProfile, uploadLogo, reset }
 })

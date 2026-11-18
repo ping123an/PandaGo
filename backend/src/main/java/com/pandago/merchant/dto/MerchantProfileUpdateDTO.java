@@ -25,9 +25,9 @@ public class MerchantProfileUpdateDTO {
     @Size(max = 32, message = "联系人不能超过 32 个字符")
     private String contactName;
 
-    /** 联系电话：允许留空；非空时校验中国大陆手机号或固话格式 */
-    @Pattern(regexp = "^$|^1[3-9]\\d{9}$|^0\\d{2,3}-?\\d{7,8}$",
-            message = "联系电话格式不正确（手机号或固话）")
+    /** 联系电话：与当前账号手机号是同一个字段，只允许大陆手机号，留空表示清空 */
+    @Pattern(regexp = "^$|^1[3-9]\\d{9}$",
+            message = "联系电话格式不正确（请输入 11 位手机号）")
     private String contactPhone;
 
     @Size(max = 200, message = "店铺地址不能超过 200 个字符")

@@ -103,6 +103,9 @@
           用户 ID、用户名与角色由系统管理，无法在此修改。当前项目未接入短信验证码，
           手机号按格式校验后直接更新；如需短信验证，后续可在此基础上扩展。
         </p>
+        <p v-if="userStore.roles.includes('MERCHANT')" class="form-hint">
+          你的账号同时拥有商家身份：此处修改手机号会同步更新店铺资料中的联系电话。
+        </p>
       </el-form>
       <template #footer>
         <el-button :disabled="saving" @click="cancelEdit">取消</el-button>
@@ -139,6 +142,7 @@ import { Camera } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { updateProfile } from '@/api/auth'
+import { useMerchantStore } from '@/stores/merchant'
 import { useUserStore } from '@/stores/user'
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024
@@ -146,6 +150,7 @@ const ACCEPTED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 
 const router = useRouter()
 const userStore = useUserStore()
+const merchantStore = useMerchantStore()
 const loading = ref(false)
 const editVisible = ref(false)
 const saving = ref(false)
@@ -220,6 +225,11 @@ async function save(): Promise<void> {
       phone: form.phone.trim() || null,
     })
     userStore.userInfo = data.data
+    // 商家账号的手机号与店铺联系电话联动：同步刷新商家 Store 缓存，
+    // 避免之后进入商家中心仍显示修改前的联系电话。
+    if (userStore.roles.includes('MERCHANT')) {
+      await merchantStore.fetchProfile(true).catch(() => undefined)
+    }
     await userStore.fetchProfile()
     ElMessage.success('个人资料保存成功')
     editVisible.value = false

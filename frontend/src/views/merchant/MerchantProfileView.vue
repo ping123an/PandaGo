@@ -62,13 +62,42 @@
             <el-input v-model="form.contactName" maxlength="32" placeholder="联系人姓名" />
           </el-form-item>
           <el-form-item label="联系电话" prop="contactPhone">
-            <el-input v-model="form.contactPhone" maxlength="20" placeholder="手机号或固话，可留空" />
+            <el-input v-model="form.contactPhone" maxlength="11" placeholder="11 位手机号，可留空" />
+            <p class="field-hint">这里与你的个人资料手机号是同一个号码，修改后自动同步；不再支持固话。</p>
           </el-form-item>
           <el-form-item label="店铺地址" prop="address">
             <el-input v-model="form.address" maxlength="200" placeholder="店铺所在地址" />
           </el-form-item>
-          <el-form-item label="店铺 Logo" prop="logo">
-            <el-input v-model="form.logo" maxlength="255" placeholder="Logo 图片地址（可选）" />
+          <el-form-item label="店铺头像">
+            <div class="logo-editor">
+              <div class="logo-preview" @click="triggerLogoInput">
+                <img v-if="logoPreview" :src="logoPreview" alt="店铺头像预览" />
+                <MerchantAvatar v-else :size="64" :round="false" alt="当前店铺头像" />
+                <span class="logo-preview-hint">{{ logoPreview ? '点击重新选择' : '点击选择图片' }}</span>
+              </div>
+              <input
+                ref="logoInputRef"
+                class="hidden-logo-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                @change="onLogoPicked"
+              />
+              <div class="logo-editor-side">
+                <p class="upload-hint">支持 JPG、JPEG、PNG、WEBP，最大 2MB。确认上传后立即生效。</p>
+                <p v-if="logoError" class="upload-error">{{ logoError }}</p>
+                <div class="logo-buttons">
+                  <el-button size="small" :disabled="logoUploading" @click="triggerLogoInput">选择图片</el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :loading="logoUploading"
+                    :disabled="!logoFile || logoUploading"
+                    @click="confirmLogoUpload"
+                  >确认上传</el-button>
+                  <el-button size="small" :disabled="!logoFile || logoUploading" @click="cancelLogoSelection">取消选择</el-button>
+                </div>
+              </div>
+            </div>
           </el-form-item>
           <el-form-item>
             <el-button type="primary" :loading="saving" @click="save">保存</el-button>
@@ -82,11 +111,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import MerchantAvatar from '@/components/MerchantAvatar.vue'
 import { useMerchantStore } from '@/stores/merchant'
+import { useUserStore } from '@/stores/user'
 import type { MerchantProfile } from '@/types/merchant'
 
 interface ProfileForm {
@@ -98,13 +128,24 @@ interface ProfileForm {
   logo: string
 }
 
+const MAX_LOGO_BYTES = 2 * 1024 * 1024
+const ACCEPTED_LOGO_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+
 const profile = ref<MerchantProfile | null>(null)
 const merchantStore = useMerchantStore()
+const userStore = useUserStore()
 const loading = ref(true)
 const loadError = ref('')
 const editing = ref(false)
 const saving = ref(false)
 const formRef = ref<FormInstance>()
+
+const logoInputRef = ref<HTMLInputElement>()
+const logoFile = ref<File | null>(null)
+const logoPreview = ref('')
+const logoError = ref('')
+const logoUploading = ref(false)
+let logoObjectUrl = ''
 
 const form = reactive<ProfileForm>({
   storeName: '', description: '', contactName: '', contactPhone: '', address: '', logo: '',
@@ -121,9 +162,69 @@ const rules: FormRules<ProfileForm> = {
   description: [{ max: 500, message: '店铺简介不能超过 500 个字符', trigger: 'blur' }],
   contactName: [{ max: 32, message: '联系人不能超过 32 个字符', trigger: 'blur' }],
   contactPhone: [
-    { pattern: /^$|^1[3-9]\d{9}$|^0\d{2,3}-?\d{7,8}$/, message: '请输入正确的手机号或固话', trigger: 'blur' },
+    { pattern: /^$|^1[3-9]\d{9}$/, message: '请输入正确的 11 位手机号', trigger: 'blur' },
   ],
   address: [{ max: 200, message: '店铺地址不能超过 200 个字符', trigger: 'blur' }],
+}
+
+/** ---------- 店铺头像：选择 → 预览 → 确认上传 ---------- */
+
+function triggerLogoInput(): void {
+  if (logoUploading.value) return
+  logoInputRef.value?.click()
+}
+
+function clearLogoSelection(): void {
+  if (logoObjectUrl) {
+    URL.revokeObjectURL(logoObjectUrl)
+    logoObjectUrl = ''
+  }
+  logoFile.value = null
+  logoPreview.value = ''
+  logoError.value = ''
+  if (logoInputRef.value) logoInputRef.value.value = ''
+}
+
+function onLogoPicked(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  clearLogoSelection()
+
+  if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
+    logoError.value = '仅支持 JPG、JPEG、PNG、WEBP 格式'
+    return
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    logoError.value = '店铺头像不能超过 2MB'
+    return
+  }
+
+  logoFile.value = file
+  logoObjectUrl = URL.createObjectURL(file)
+  logoPreview.value = logoObjectUrl
+}
+
+/** 上传成功后由 Store 更新全局头像，所有商家页面立即同步 */
+async function confirmLogoUpload(): Promise<void> {
+  if (logoUploading.value || !logoFile.value) return
+  logoUploading.value = true
+  logoError.value = ''
+  try {
+    const updated = await merchantStore.uploadLogo(logoFile.value)
+    form.logo = updated.logo || ''
+    profile.value = updated
+    clearLogoSelection()
+    ElMessage.success('店铺头像上传成功')
+  } catch (error) {
+    logoError.value = error instanceof Error ? error.message : '上传失败，请稍后重试'
+  } finally {
+    logoUploading.value = false
+  }
+}
+
+function cancelLogoSelection(): void {
+  clearLogoSelection()
 }
 
 async function loadProfile(): Promise<void> {
@@ -143,6 +244,7 @@ async function loadProfile(): Promise<void> {
 /** 进入编辑态：用当前资料填充表单（取消时不会写库） */
 function startEdit(): void {
   if (!profile.value) return
+  clearLogoSelection()
   Object.assign(form, {
     storeName: profile.value.storeName,
     description: profile.value.description ?? '',
@@ -155,6 +257,7 @@ function startEdit(): void {
 }
 
 function cancelEdit(): void {
+  clearLogoSelection()
   editing.value = false
   formRef.value?.clearValidate()
 }
@@ -175,6 +278,9 @@ async function save(): Promise<void> {
       logo: form.logo || null,
     })
     profile.value = merchantStore.profile
+    // 联系电话与个人中心手机号是同一个号码，后端会同步 user.phone，这里刷新用户 Store
+    // 保证右上角与个人中心显示的是同一个手机号。
+    await userStore.fetchProfile()
     ElMessage.success('店铺资料保存成功')
     editing.value = false
     await loadProfile()
@@ -194,6 +300,7 @@ function auditClass(status: string): string {
 }
 
 onMounted(loadProfile)
+onBeforeUnmount(clearLogoSelection)
 </script>
 
 <style scoped>
@@ -217,7 +324,17 @@ onMounted(loadProfile)
 .tag.paused, .tag.pending { color: #b45309; }
 .tag.rejected { color: #dc2626; }
 .tag.approved { color: #16a34a; }
-.edit-form { max-width: 560px; }
+.edit-form { max-width: 620px; }
+.field-hint { color: var(--pd-muted); font-size: 12px; margin: 6px 0 0; }
+.logo-editor { display: flex; align-items: flex-start; gap: 16px; }
+.logo-preview { position: relative; width: 64px; height: 64px; flex: none; border: 1px dashed var(--pd-border); border-radius: 12px; overflow: hidden; cursor: pointer; background: #fff; }
+.logo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.logo-preview-hint { position: absolute; inset: auto 0 0; background: rgba(0,0,0,.55); color: #fff; font-size: 10px; text-align: center; padding: 3px 0; }
+.logo-editor-side { flex: 1; min-width: 0; }
+.upload-hint { color: var(--pd-muted); font-size: 12px; margin: 2px 0 8px; }
+.upload-error { color: #dc2626; font-size: 12px; margin: 0 0 8px; }
+.logo-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.hidden-logo-input { display: none; }
 .hint { color: var(--pd-muted); font-size: 12px; margin: 8px 0 0 100px; }
 @media (max-width: 640px) { .merchant-profile { padding: 14px; } .hint { margin-left: 0; } .info-row { font-size: 12px; } }
 </style>

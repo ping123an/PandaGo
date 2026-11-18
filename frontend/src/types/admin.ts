@@ -5,6 +5,10 @@ export interface AdminUser {
   id: number
   username: string
   nickname: string
+  /**
+   * 统一联系电话。商家账号在个人中心或商家资料修改手机号时会双向同步，
+   * 因此平台管理只展示这一个字段，不再区分账号手机号和店铺联系电话。
+   */
   phone: string | null
   /** 1 启用 0 禁用 */
   status: number

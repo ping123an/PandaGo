@@ -26,7 +26,7 @@
         <el-table-column prop="nickname" label="昵称" min-width="140">
           <template #default="{ row }">{{ row.nickname || '—' }}</template>
         </el-table-column>
-        <el-table-column prop="phone" label="手机号" min-width="140">
+        <el-table-column prop="phone" label="联系电话" min-width="150">
           <template #default="{ row }">{{ row.phone || '—' }}</template>
         </el-table-column>
         <el-table-column label="角色" min-width="180">

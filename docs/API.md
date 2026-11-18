@@ -513,6 +513,7 @@ URL 规则 + 方法级 `@PreAuthorize` + Service `requireRole` 三重保护。
 - 手机号传空字符串时后端用 `LambdaUpdateWrapper.set(null)` 显式写空，不会因 MyBatis-Plus 忽略 null 而保留旧值。
 - 项目未接入短信验证码，**不涉及验证码**，仅做格式校验。
 - 成功返回更新后的 `UserInfoVO`；失败返回 400。
+- **商家手机号联动**：若数据库实时角色中包含 `MERCHANT`，保存 `phone`（包括清空）时会用事务同步写入 `merchant_profile.contact_phone`；普通用户不写店铺表。同步逻辑走后端 Service，角色从数据库读取，不信任 JWT 中可能过期的角色。
 
 ### 15.3 `POST /users/me/avatar` — 上传头像（multipart）
 
@@ -560,3 +561,44 @@ PANDAGO_TEST_DB_URL='jdbc:mysql://127.0.0.1:3307/pandago?useUnicode=true&charact
 PANDAGO_TEST_DB_USER=root PANDAGO_TEST_DB_PASSWORD='' \
 mvn -Dtest=UserAvatarUploadTests test
 ```
+
+### 15.5 商家资料手机号同步与店铺头像上传
+
+**手机号同步规则**（后端 `PhoneLinkService` + 两个 Service 的事务）：
+
+| 修改入口 | 写入字段 | 联动规则 |
+| --- | --- | --- |
+| `PUT /api/v1/users/me/profile` | `user.phone` | 若数据库角色含 `MERCHANT`，同一事务同步写 `merchant_profile.contact_phone`；清空也同步 |
+| `PUT /api/v1/merchant/profile` | `merchant_profile.contact_phone` | 只接受大陆手机号 `^1[3-9]\d{9}$`，同一事务同步写 `user.phone`；清空也同步 |
+
+商家账号在个人中心和商家资料维护的是同一个联系电话，统一限定为手机号。原先允许固话的分支已移除，避免平台只显示一个联系电话列时再次出现两处值不一致。
+
+平台用户管理按产品决策**合并为一个“联系电话”列**，数据来源固定为 `user.phone`；管理端 VO 不再返回 `merchant_profile.contact_phone`。内部字段仍然存在于商家资料中，但只由商家资料接口读写，并通过 Service 与用户手机号同步，用户无需感知两套字段。
+
+**头像上传接口**：
+
+完整路径 `POST /api/v1/merchant/profile/logo`，仅 `MERCHANT` 角色可访问；`Content-Type: multipart/form-data`，文件字段名固定为 `file`。
+
+```bash
+curl -X POST http://localhost:8080/api/v1/merchant/profile/logo \
+  -H "Authorization: Bearer <JWT>" \
+  -F "file=@store-logo.png"
+```
+
+响应：
+
+```json
+{ "code": 200, "success": true, "data": { "logoUrl": "/uploads/avatars/1f0c...png" } }
+```
+
+校验规则与 15.3 完全一致（2MB、JPG/JPEG/PNG/WEBP、扩展名/Content-Type/魔数三重校验）。身份只从 JWT 取，请求夹带 `merchantId` / `userId` 无效；文件写到同一个 `uploads/avatars/`，数据库只更新 `merchant_profile.logo` 相对 URL。前端上传成功后立即更新 `merchantStore.logoUrl`，商家中心右上角、工作台、商品管理、订单管理、资料页同步刷新，刷新页面后由后端资料接口恢复。
+
+专项测试：
+
+```bash
+cd backend
+PANDAGO_TEST_DB_URL='jdbc:mysql://127.0.0.1:3307/pandago?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false' \
+PANDAGO_TEST_DB_USER=root PANDAGO_TEST_DB_PASSWORD='' \
+mvn -Dtest=MerchantPhoneLinkTests,MerchantLogoUploadTests test
+```
+

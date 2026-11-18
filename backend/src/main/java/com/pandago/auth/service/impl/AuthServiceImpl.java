@@ -11,6 +11,7 @@ import com.pandago.common.api.ResultCode;
 import com.pandago.common.enums.CommonStatus;
 import com.pandago.common.enums.RoleCode;
 import com.pandago.common.exception.BusinessException;
+import com.pandago.common.service.PhoneLinkService;
 import com.pandago.role.entity.Role;
 import com.pandago.role.mapper.RoleMapper;
 import com.pandago.security.LoginUserPrincipal;
@@ -49,6 +50,7 @@ public class AuthServiceImpl implements AuthService {
     private final UserRoleMapper userRoleMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final PhoneLinkService phoneLinkService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -164,6 +166,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UserInfoVO updateMyProfile(UserProfileUpdateDTO dto) {
         // 身份只从 SecurityContext 读取，绝不相信请求体里的 userId；因此只能改自己
         Long userId = SecurityUtils.requireCurrentUser().getUserId();
@@ -173,12 +176,20 @@ public class AuthServiceImpl implements AuthService {
         }
         // 白名单：只改昵称与手机号；username / passwordHash / status / 角色 / id 一律不动
         // 用 UpdateWrapper 显式 set，保证 phone 传 null 时也能清空（updateById 默认忽略 null 字段）
+        String phone = blankToNull(dto.getPhone());
         com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User> updateWrapper =
                 new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();
         updateWrapper.eq(User::getId, userId)
                 .set(User::getNickname, dto.getNickname().trim())
-                .set(User::getPhone, blankToNull(dto.getPhone()));
+                .set(User::getPhone, phone);
         userMapper.update(null, updateWrapper);
+
+        // 商家账号的手机号与个人中心手机号是同一业务的两种展示：
+        // 角色从数据库实时读取（不信任 JWT 中可能过期的角色），同步写入店铺联系电话。
+        // 普通用户不会写店铺表；手机号清空时店铺联系电话也清空。
+        if (findRoleCodes(userId).contains(RoleCode.MERCHANT)) {
+            phoneLinkService.syncUserPhoneToStore(userId, phone);
+        }
         log.info("用户 {} 更新个人资料", userId);
         return toUserInfoVO(userMapper.selectById(userId));
     }
