@@ -1,0 +1,116 @@
+// ============================================================
+// PandaGo 全局主题
+// 视觉基调：熊猫黑白 + 电商红（强调）+ 竹青（辅助）
+// 所有页面共用这里的 CSS 变量，避免颜色/间距散落各处。
+// ============================================================
+
+:root {
+  // 品牌色
+  --pd-ink: #1f2329;          // 熊猫黑：文字、深色区块
+  --pd-ink-soft: #4b5563;
+  --pd-paper: #ffffff;        // 熊猫白：卡片、页面底色
+  --pd-primary: #e1251b;      // 电商红：价格、主按钮
+  --pd-primary-dark: #c21e16;
+  --pd-bamboo: #16a34a;       // 竹青：成功状态
+  --pd-orange: #ff6a00;
+  --pd-bg: #f5f5f5;
+  --pd-border: #eaeaea;
+  --pd-muted: #666666;
+
+  // Element Plus 主题覆盖
+  --el-color-primary: #e1251b;
+  --el-color-success: #16a34a;
+  --el-border-radius-base: 6px;
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--pd-bg);
+  color: var(--pd-ink);
+  font-family: var(--el-font-family);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.container {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--pd-paper);
+  border: 1px solid var(--pd-border);
+  border-radius: 10px;
+}
+
+.text-primary {
+  color: var(--pd-primary);
+}
+
+.text-muted {
+  color: var(--pd-muted);
+}
+
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(225, 37, 27, 0.08);
+  color: var(--pd-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 18px;
+
+  h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  span {
+    color: var(--pd-muted);
+    font-size: 13px;
+  }
+}
+
+// 通用淡入，让页面切换不那么生硬
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}

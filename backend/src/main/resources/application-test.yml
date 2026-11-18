@@ -1,0 +1,18 @@
+# 测试环境配置
+# 阶段 2 起在此配置测试数据库连接；密钥等敏感值由测试环境变量提供。
+spring:
+  datasource:
+    url: ${PANDAGO_TEST_DB_URL:jdbc:mysql://127.0.0.1:3306/pandago?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${PANDAGO_TEST_DB_USER:}
+    password: ${PANDAGO_TEST_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+pandago:
+  env: test
+  # 测试环境默认不启用缓存（走 NoOpCacheService，等价 Redis 不可用降级）
+  cache:
+    enabled: ${PANDAGO_CACHE_ENABLED:false}
+  # 测试不启动后台扫描，超时关闭由测试手动调用服务验证
+  order:
+    timeout:
+      schedule-enabled: false

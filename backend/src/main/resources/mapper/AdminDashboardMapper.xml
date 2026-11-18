@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pandago.admin.mapper.AdminDashboardMapper">
+
+    <!--
+      用户指标。项目允许一个账号拥有多个角色，因此必须用 COUNT(DISTINCT ...) 防止
+      user_role 关联放大计数：
+      - userTotal：拥有 USER 角色的买家账号数；
+      - accountTotal：全部未删除账号数（含商家/管理员）；
+      - todayNewUsers：今日注册的买家账号数。
+    -->
+    <select id="selectUserStats" resultType="java.util.Map">
+        SELECT
+            COUNT(DISTINCT u.id) AS accountTotal,
+            COUNT(DISTINCT CASE WHEN EXISTS (
+                SELECT 1 FROM user_role ur JOIN role r ON r.id = ur.role_id
+                WHERE ur.user_id = u.id AND r.code = 'USER'
+            ) THEN u.id END) AS userTotal,
+            COUNT(DISTINCT CASE WHEN u.created_at &gt;= CURDATE() AND EXISTS (
+                SELECT 1 FROM user_role ur JOIN role r ON r.id = ur.role_id
+                WHERE ur.user_id = u.id AND r.code = 'USER'
+            ) THEN u.id END) AS todayNewUsers
+        FROM user u
+        WHERE u.deleted = 0
+    </select>
+
+    <!--
+      商品指标：全部商品、用户端可见商品、待审核商品。
+      "上架数"与用户端列表口径一致：ON_SALE + APPROVED + 未删除。
+    -->
+    <select id="selectProductStats" resultType="java.util.Map">
+        SELECT
+            COUNT(*) AS productTotal,
+            COALESCE(SUM(CASE WHEN status = 'ON_SALE' AND audit_status = 'APPROVED'
+                THEN 1 ELSE 0 END), 0) AS productOnSale,
+            COALESCE(SUM(CASE WHEN audit_status = 'PENDING' THEN 1 ELSE 0 END), 0) AS pendingReviewProducts
+        FROM product
+        WHERE deleted = 0
+    </select>
+
+    <!--
+      订单指标与交易金额口径：
+      - orderTotal 统计全部订单（含已取消、待支付）；
+      - 交易金额只统计"已支付且未取消"的订单：PENDING_SHIPMENT / PENDING_RECEIPT / COMPLETED，
+        并且必须存在 status='SUCCESS' 的支付记录；
+      - 排除 PENDING_PAYMENT（未支付）与 CANCELLED（已取消/超时关闭）；
+      - 本项目使用模拟支付（payment_record.status 仅 SUCCESS），没有退款状态与退款表；
+      - 金额取 orders.total_amount 下单快照，不用商品现价；payment_record 对订单有唯一约束，
+        LEFT JOIN 不会放大金额。
+    -->
+    <select id="selectOrderStats" resultType="java.util.Map">
+        SELECT
+            COUNT(*) AS orderTotal,
+            COALESCE(SUM(CASE WHEN o.status = 'PENDING_SHIPMENT' THEN 1 ELSE 0 END), 0) AS pendingShipmentOrders,
+            COALESCE(SUM(CASE WHEN o.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completedOrders,
+            COALESCE(SUM(CASE WHEN o.created_at &gt;= CURDATE() THEN 1 ELSE 0 END), 0) AS todayNewOrders,
+            COALESCE(SUM(CASE WHEN o.status IN ('PENDING_SHIPMENT', 'PENDING_RECEIPT', 'COMPLETED')
+                AND p.id IS NOT NULL THEN o.total_amount ELSE 0 END), 0) AS totalSalesAmount
+        FROM orders o
+        LEFT JOIN payment_record p ON p.order_id = o.id AND p.status = 'SUCCESS'
+    </select>
+
+    <!--
+      最近订单：按创建时间倒序且只取 limit 条。
+      商品信息来自 order_item 快照；用一次派生表聚合避免每条订单再查一次明细（N+1）。
+      买家手机号遵循项目隐私规则，只返回中间四位脱敏结果。
+    -->
+    <select id="selectRecentOrders" resultType="com.pandago.admin.vo.AdminDashboardVO$RecentOrderVO">
+        SELECT
+            o.id,
+            o.order_no AS orderNo,
+            o.total_amount AS totalAmount,
+            o.status,
+            o.created_at AS createdAt,
+            o.receiver_name AS buyerName,
+            CASE WHEN o.receiver_phone IS NOT NULL AND LENGTH(o.receiver_phone) &gt;= 7
+                 THEN CONCAT(LEFT(o.receiver_phone, 3), '****', RIGHT(o.receiver_phone, 4))
+                 ELSE o.receiver_phone END AS buyerPhoneMasked,
+            first_item.product_name AS firstProductName,
+            item_summary.item_count AS itemCount
+        FROM orders o
+        LEFT JOIN (
+            SELECT order_id, MIN(id) AS first_item_id, COUNT(*) AS item_count
+            FROM order_item
+            GROUP BY order_id
+        ) item_summary ON item_summary.order_id = o.id
+        LEFT JOIN order_item first_item ON first_item.id = item_summary.first_item_id
+        ORDER BY o.created_at DESC, o.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      最近待审核商品：只查 audit_status='PENDING'，按提交（创建）时间倒序且限制条数。
+      商家名称优先取店铺名，其次昵称/用户名；平台演示商品返回空串，由 Service 兜底。
+    -->
+    <select id="selectPendingReviewProducts" resultType="com.pandago.admin.vo.AdminDashboardVO$PendingProductVO">
+        SELECT
+            p.id,
+            p.name,
+            p.main_image AS mainImage,
+            p.price,
+            p.created_at AS createdAt,
+            p.audit_status AS auditStatus,
+            COALESCE(mp.store_name, u.nickname, u.username, '') AS merchantName
+        FROM product p
+        LEFT JOIN user u ON u.id = p.merchant_id AND u.deleted = 0
+        LEFT JOIN merchant_profile mp ON mp.user_id = p.merchant_id
+        WHERE p.deleted = 0
+          AND p.audit_status = 'PENDING'
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

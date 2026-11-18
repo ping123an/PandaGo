@@ -1,0 +1,99 @@
+# ========== PandaGo 全栈编排（MySQL + Redis + 后端 + 前端） ==========
+# 使用前：cp .env.example .env 并修改其中所有密码（生产环境禁止沿用默认值）。
+# 语法兼容 Docker Compose v2（docker compose ...）；version 字段仅为旧版兼容保留。
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pandago-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: pandago
+      MYSQL_USER: ${MYSQL_USER:?请在 .env 设置 MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 设置 MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    ports:
+      - '${MYSQL_HOST_PORT:-3306}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # schema.sql 已含全部阶段的表/列/索引，新容器一次初始化到位；
+      # 已部署旧库的增量升级见 docs/DEPLOYMENT.md（执行 database/migration/V*.sql）
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/init-data.sql:/docker-entrypoint-initdb.d/02-init-data.sql:ro
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -uroot -p"$$MYSQL_ROOT_PASSWORD"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: pandago-redis
+    restart: unless-stopped
+    ports:
+      - '${REDIS_HOST_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    command: sh -c 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 .env 设置 REDIS_PASSWORD}
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pandago-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # 数据库：服务名 mysql 作为 host，端口容器内固定 3306
+      PANDAGO_DB_URL: jdbc:mysql://mysql:3306/pandago?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      PANDAGO_DB_USER: ${MYSQL_USER:?请在 .env 设置 MYSQL_USER}
+      PANDAGO_DB_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 设置 MYSQL_PASSWORD}
+      # Redis
+      PANDAGO_REDIS_HOST: redis
+      PANDAGO_REDIS_PORT: 6379
+      PANDAGO_REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 .env 设置 REDIS_PASSWORD}
+      # JWT：生产必须设置足够长随机串
+      PANDAGO_JWT_SECRET: ${PANDAGO_JWT_SECRET:?请在 .env 设置 PANDAGO_JWT_SECRET（>=32字节随机串）}
+      PANDAGO_JWT_EXPIRATION_MS: ${PANDAGO_JWT_EXPIRATION_MS:-86400000}
+      # 缓存与超时任务
+      PANDAGO_CACHE_ENABLED: ${PANDAGO_CACHE_ENABLED:-true}
+      PANDAGO_ORDER_TIMEOUT_MINUTES: ${PANDAGO_ORDER_TIMEOUT_MINUTES:-30}
+    ports:
+      - '${BACKEND_HOST_PORT:-8080}:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:8080/api/v1/health | grep -q "UP" || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pandago-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '${FRONTEND_HOST_PORT:-80}:80'
+
+volumes:
+  mysql-data:
+  redis-data:

@@ -1,0 +1,26 @@
+# 开发环境配置
+# 阶段 1 不连接数据库与 Redis；阶段 2 / 9 接入时在此补充以下配置：
+#   spring.data.redis.*  (Redis 7)
+# 注意：数据库账号密码从环境变量读取，不硬编码提交。
+spring:
+  datasource:
+    url: ${PANDAGO_DB_URL:jdbc:mysql://127.0.0.1:3306/pandago?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${PANDAGO_DB_USER:}
+    password: ${PANDAGO_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+  # Redis 连接（阶段 9）：全部来自环境变量，禁止把密码写进仓库。
+  # 本地无密码的 Redis 直接留空 PANDAGO_REDIS_PASSWORD 即可。
+  data:
+    redis:
+      host: ${PANDAGO_REDIS_HOST:127.0.0.1}
+      port: ${PANDAGO_REDIS_PORT:6379}
+      password: ${PANDAGO_REDIS_PASSWORD:}
+      timeout: 2s
+      lettuce:
+        shutdown-timeout: 100ms
+
+pandago:
+  env: dev

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pandago.merchant.mapper.MerchantDashboardMapper">
+
+    <!--
+      商家商品指标：总数 / 上架数。
+      merchant_id 强制带条件，前端无法越权统计其他商家。
+      "上架数"口径与用户端商品列表一致：ON_SALE + APPROVED + 未删除。
+    -->
+    <select id="selectProductStats" resultType="java.util.Map">
+        SELECT
+            COUNT(*) AS productTotal,
+            SUM(CASE WHEN status = 'ON_SALE' AND audit_status = 'APPROVED' THEN 1 ELSE 0 END) AS productOnSale
+        FROM product
+        WHERE merchant_id = #{merchantId}
+          AND deleted = 0
+    </select>
+
+    <!--
+      商家订单指标：待发货数 / 已完成数 / 销售额。
+      销售额口径（与订单业务规则一致）：
+        - 只统计"已支付且未取消"的订单：PENDING_SHIPMENT / PENDING_RECEIPT / COMPLETED；
+        - 排除 PENDING_PAYMENT（未支付）与 CANCELLED（已取消 / 超时关闭），两者都不计入；
+        - 本项目无退款状态（订单状态机只有 5 种），因此不存在退款订单误计的问题；
+        - 金额取 orders.total_amount 快照，不使用商品现价。
+    -->
+    <select id="selectOrderStats" resultType="java.util.Map">
+        SELECT
+            SUM(CASE WHEN status = 'PENDING_SHIPMENT' THEN 1 ELSE 0 END) AS pendingShipmentOrders,
+            SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completedOrders,
+            COALESCE(SUM(CASE
+                WHEN status IN ('PENDING_SHIPMENT', 'PENDING_RECEIPT', 'COMPLETED')
+                THEN total_amount ELSE 0 END), 0) AS salesAmount
+        FROM orders
+        WHERE merchant_id = #{merchantId}
+    </select>
+
+    <!--
+      当前商家最近订单。买家信息遵循现有隐私规则：
+      收货人姓名按订单快照展示（与商家订单详情一致），手机号做中间四位脱敏，
+      不返回完整手机号、地址等敏感信息。
+    -->
+    <select id="selectRecentOrders" resultType="com.pandago.merchant.vo.MerchantDashboardVO$RecentOrderVO">
+        SELECT
+            id,
+            order_no AS orderNo,
+            total_amount AS totalAmount,
+            status,
+            created_at AS createdAt,
+            receiver_name AS buyerName,
+            CASE WHEN receiver_phone IS NOT NULL AND LENGTH(receiver_phone) >= 7
+                 THEN CONCAT(LEFT(receiver_phone, 3), '****', RIGHT(receiver_phone, 4))
+                 ELSE receiver_phone END AS buyerPhoneMasked
+        FROM orders
+        WHERE merchant_id = #{merchantId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 当前商家最近创建的商品，供工作台"商品概览"展示 -->
+    <select id="selectRecentProducts" resultType="com.pandago.merchant.vo.MerchantDashboardVO$RecentProductVO">
+        SELECT
+            id,
+            name,
+            main_image AS mainImage,
+            price,
+            stock,
+            status,
+            audit_status AS auditStatus,
+            sales,
+            created_at AS createdAt
+        FROM product
+        WHERE merchant_id = #{merchantId}
+          AND deleted = 0
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

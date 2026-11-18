@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 268 64" role="img" aria-label="PandaGo">
+  <title>PandaGo</title>
+  <!-- 图形标志：购物袋 + 字母 P -->
+  <g>
+    <path d="M21 23 C21 11 43 11 43 23" fill="none" stroke="#e1251b" stroke-width="5" stroke-linecap="round" />
+    <path d="M11 23 H53 L50.5 53 A4 4 0 0 1 46.5 56.5 H17.5 A4 4 0 0 1 13.5 53 Z" fill="#e1251b" />
+    <path d="M25 47 V31 H33 A6.5 6.5 0 0 1 33 44 H25" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round" />
+  </g>
+  <!-- 品牌文字 -->
+  <text x="74" y="40" font-family="Arial, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="34" font-weight="700" letter-spacing="-1" fill="#1f2329">PandaGo</text>
+</svg>

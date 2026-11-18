@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="PandaGo 商品占位图">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f9fafb"/>
+      <stop offset="1" stop-color="#e5e7eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)"/>
+  <circle cx="200" cy="188" r="120" fill="#fff" stroke="#1f2329" stroke-width="6"/>
+  <circle cx="128" cy="100" r="34" fill="#1f2329"/>
+  <circle cx="272" cy="100" r="34" fill="#1f2329"/>
+  <ellipse cx="152" cy="172" rx="26" ry="34" fill="#1f2329" transform="rotate(-14 152 172)"/>
+  <ellipse cx="248" cy="172" rx="26" ry="34" fill="#1f2329" transform="rotate(14 248 172)"/>
+  <circle cx="158" cy="167" r="7" fill="#fff"/>
+  <circle cx="242" cy="167" r="7" fill="#fff"/>
+  <ellipse cx="200" cy="218" rx="13" ry="9" fill="#1f2329"/>
+  <path d="M178 244 Q200 264 222 244" fill="none" stroke="#1f2329" stroke-width="5" stroke-linecap="round"/>
+  <text x="200" y="340" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="700" fill="#1f2329">PandaGo 精选好物</text>
+  <text x="200" y="370" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#6b7280">商品图片占位 · 阶段 2</text>
+</svg>

@@ -1,0 +1,7 @@
+# 后端构建上下文忽略项
+target/
+*.log
+.mvn/
+.git/
+.idea/
+*.iml

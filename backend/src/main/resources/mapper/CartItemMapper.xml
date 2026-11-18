@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pandago.cart.mapper.CartItemMapper">
+
+    <!--
+      并发安全的"新增或累加"：唯一索引 uk_cart_user_product 让重复添加落到
+      ON DUPLICATE KEY UPDATE 分支，InnoDB 对该行加锁后串行累加，避免
+      "先查再写"的竞态和 insert 失败后再 update 引发的死锁。
+      IF 条件保证并发累加也不会突破库存：库存不足时数量不变，affected rows 为 0。
+    -->
+    <insert id="upsertQuantity">
+        INSERT INTO cart_item (user_id, product_id, quantity, selected, created_at, updated_at)
+        VALUES (#{userId}, #{productId}, #{quantity}, 1, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+          quantity = IF(quantity + #{quantity} &lt;= #{stock}, quantity + #{quantity}, quantity),
+          updated_at = IF(quantity + #{quantity} &lt;= #{stock}, NOW(), updated_at)
+    </insert>
+
+</mapper>

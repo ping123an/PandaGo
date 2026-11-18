@@ -1,0 +1,43 @@
+# ========== 通用 ==========
+.DS_Store
+*.log
+*.swp
+.idea/
+.vscode/
+*.iml
+
+# ========== 后端 (Java / Maven) ==========
+backend/target/
+backend/.mvn/
+!backend/.mvn/wrapper/maven-wrapper.jar
+backend/*.log
+
+# ========== 前端 (Node / Vite) ==========
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/*.local
+frontend/.env.local
+frontend/.env.*.local
+frontend/coverage/
+frontend/.esbuild-tmp/
+frontend/.tmp-build/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/pnpm-debug.log*
+
+# ========== 环境 & 密钥 ==========
+.env
+*.env
+!*.env.example
+
+# ========== 运行时上传文件（用户头像等，不属于源码） ==========
+backend/uploads/
+
+# ========== 数据库本地数据 ==========
+*.sql.gz
+database/data/
+
+# ========== WorkBuddy 本地数据（不含在项目源码中） ==========
+.workbuddy/

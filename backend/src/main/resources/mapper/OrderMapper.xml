@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pandago.order.mapper.OrderMapper">
+
+    <!--
+      阶段 7 订单状态条件流转。
+      from / userId 都写在 WHERE 中：数据库在行锁下判断"是否仍是可流转状态"。
+      受影响行数 = 1 才允许后续写支付记录或回补库存；0 表示并发竞争或状态已变化。
+    -->
+    <update id="transitionStatus">
+        UPDATE orders
+        SET status = #{to},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = #{from}
+    </update>
+
+    <!--
+      阶段 8 商家发货： merchant_id + from 同时在 WHERE。
+      只有本人商家且仍待发货的订单才会变为待收货；重复/越权/并发均影响 0 行。
+    -->
+    <update id="shipOrder">
+        UPDATE orders
+        SET status = #{to},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND merchant_id = #{merchantId}
+          AND status = #{from}
+    </update>
+
+    <!--
+      阶段 8 用户确认收货：user_id + from 同时在 WHERE，并写入 received_at。
+      重复确认第二次影响 0 行，无副作用。
+    -->
+    <update id="confirmReceipt">
+        UPDATE orders
+        SET status = #{to},
+            received_at = #{receivedAt},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = #{from}
+    </update>
+
+    <!--
+      阶段 9 超时关闭：from 状态 + created_at <= cutoff 同时在 WHERE。
+      已支付订单状态不再是 from、未超时订单 created_at 晚于 cutoff 都会影响 0 行；
+      重复扫描时首个请求已改状态，后续请求影响 0 行，天然幂等，不会重复回补库存。
+    -->
+    <update id="closeTimeoutOrder">
+        UPDATE orders
+        SET status = #{to},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND status = #{from}
+          AND created_at &lt;= #{cutoff}
+    </update>
+
+    <select id="selectTimedOutOrderIds" resultType="java.lang.Long">
+        SELECT id
+        FROM orders
+        WHERE status = #{status}
+          AND created_at &lt;= #{cutoff}
+        ORDER BY created_at ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

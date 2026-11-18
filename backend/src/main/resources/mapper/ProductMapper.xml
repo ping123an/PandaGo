@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.pandago.product.mapper.ProductMapper">
+
+    <!-- 商品卡片展示对象映射：category_name 来自 category 表关联查询 -->
+    <resultMap id="ProductListVOMap" type="com.pandago.product.vo.ProductListVO">
+        <id property="id" column="id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="name" column="name"/>
+        <result property="subtitle" column="subtitle"/>
+        <result property="mainImage" column="main_image"/>
+        <result property="price" column="price"/>
+        <result property="stockStatus" column="stock_status"/>
+        <result property="sales" column="sales"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <resultMap id="ProductManagementVOMap" type="com.pandago.product.vo.ProductManagementVO">
+        <id property="id" column="id"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="merchantName" column="merchant_name"/>
+        <result property="name" column="name"/>
+        <result property="mainImage" column="main_image"/>
+        <result property="price" column="price"/>
+        <result property="stock" column="stock"/>
+        <result property="sales" column="sales"/>
+        <result property="status" column="status"/>
+        <result property="auditStatus" column="audit_status"/>
+        <result property="auditReason" column="audit_reason"/>
+        <result property="auditBy" column="audit_by"/>
+        <result property="auditTime" column="audit_time"/>
+        <result property="sort" column="sort"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!--
+      用户端商品条件分页：只展示审核通过、已上架、未删除的商品（AGENTS 6.2）。
+      排序列与方向由 Service 白名单校验后写入 query.sortColumn / sortDirection，
+      此处使用 ${} 拼接；禁止把前端原始字符串直接用于 ${}。
+    -->
+    <select id="selectProductList" resultMap="ProductListVOMap">
+        SELECT p.id,
+               p.category_id,
+               c.name AS category_name,
+               p.name,
+               p.subtitle,
+               p.main_image,
+               p.price,
+               CASE WHEN p.stock &gt; 0 THEN 'IN_STOCK' ELSE 'OUT_OF_STOCK' END AS stock_status,
+               p.sales,
+               p.status
+        FROM product p
+        LEFT JOIN category c ON c.id = p.category_id AND c.deleted = 0
+        WHERE p.deleted = 0
+          AND p.status = 'ON_SALE'
+          AND p.audit_status = 'APPROVED'
+        <if test="query.categoryId != null">
+            AND p.category_id = #{query.categoryId}
+        </if>
+        <if test="query.keyword != null and query.keyword.trim() != ''">
+            AND (p.name LIKE CONCAT('%', #{query.keyword}, '%')
+                 OR p.subtitle LIKE CONCAT('%', #{query.keyword}, '%'))
+        </if>
+        <if test="query.minPrice != null">
+            AND p.price &gt;= #{query.minPrice}
+        </if>
+        <if test="query.maxPrice != null">
+            AND p.price &lt;= #{query.maxPrice}
+        </if>
+        ORDER BY ${query.sortColumn} ${query.sortDirection}, p.id DESC
+    </select>
+
+    <!-- 首页热门推荐：与用户端列表使用同一可见性规则，limit 由 Controller 限制范围 -->
+    <select id="selectHotProducts" resultMap="ProductListVOMap">
+        SELECT p.id,
+               p.category_id,
+               c.name AS category_name,
+               p.name,
+               p.subtitle,
+               p.main_image,
+               p.price,
+               CASE WHEN p.stock &gt; 0 THEN 'IN_STOCK' ELSE 'OUT_OF_STOCK' END AS stock_status,
+               p.sales,
+               p.status
+        FROM product p
+        LEFT JOIN category c ON c.id = p.category_id AND c.deleted = 0
+        WHERE p.deleted = 0
+          AND p.status = 'ON_SALE'
+          AND p.audit_status = 'APPROVED'
+        ORDER BY p.sales DESC, p.created_at DESC, p.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      管理列表：商家端 query.merchantId 非空，强制只查本人商品；
+      管理员端 merchantId 为 null，查询全平台。状态条件全部参数绑定。
+    -->
+    <select id="selectProductManagementList" resultMap="ProductManagementVOMap">
+        SELECT p.id,
+               p.category_id,
+               c.name AS category_name,
+               COALESCE(mp.store_name, u.nickname, u.username, '') AS merchant_name,
+               p.name,
+               p.main_image,
+               p.price,
+               p.stock,
+               p.sales,
+               p.status,
+               p.audit_status,
+               p.audit_reason,
+               p.audit_by,
+               p.audit_time,
+               p.sort,
+               p.created_at,
+               p.updated_at
+        FROM product p
+        LEFT JOIN category c ON c.id = p.category_id AND c.deleted = 0
+        LEFT JOIN user u ON u.id = p.merchant_id AND u.deleted = 0
+        LEFT JOIN merchant_profile mp ON mp.user_id = p.merchant_id
+        WHERE p.deleted = 0
+        <if test="query.merchantId != null">
+            AND p.merchant_id = #{query.merchantId}
+        </if>
+        <if test="query.categoryId != null">
+            AND p.category_id = #{query.categoryId}
+        </if>
+        <if test="query.keyword != null and query.keyword.trim() != ''">
+            AND p.name LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query.status != null and query.status != ''">
+            AND p.status = #{query.status}
+        </if>
+        <if test="query.auditStatus != null and query.auditStatus != ''">
+            AND p.audit_status = #{query.auditStatus}
+        </if>
+        ORDER BY ${query.sortColumn} ${query.sortDirection}, p.id DESC
+    </select>
+
+
+    <!--
+      阶段 6 库存条件扣减：库存/状态/审核/删除条件全部放进 WHERE，由 InnoDB 行锁保证原子性。
+      sales 同步累加；受影响行数为 0 即视为失败，Service 必须抛异常触发事务回滚。
+      注意：这里不能用 MyBatis-Plus 的逻辑删除自动拼条件，必须手写 deleted = 0。
+    -->
+    <update id="deductStock">
+        UPDATE product
+        SET stock = stock - #{quantity},
+            sales = sales + #{quantity},
+            updated_at = NOW()
+        WHERE id = #{productId}
+          AND stock &gt;= #{quantity}
+          AND status = 'ON_SALE'
+          AND audit_status = 'APPROVED'
+          AND deleted = 0
+    </update>
+
+    <!--
+      阶段 7 取消订单回补库存：只按商品 ID 增加 stock，不附带上下架/审核条件。
+      原因是订单创建时已占用库存，后续商品被下架也不能吞掉应归还的数量。
+      本阶段不反向调整 sales，避免改动阶段 6 已验收的销量统计口径。
+    -->
+    <update id="restoreStock">
+        UPDATE product
+        SET stock = stock + #{quantity},
+            updated_at = NOW()
+        WHERE id = #{productId}
+    </update>
+
+</mapper>

@@ -1,0 +1,95 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: pandago
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      # 业务上限 2MB，这里略放大；超过业务上限由 UploadedImageValidator 明确拒绝
+      max-file-size: 3MB
+      max-request-size: 3MB
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
+
+# MyBatis-Plus（阶段 2）
+mybatis-plus:
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.pandago
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JWT 认证配置（阶段 3）
+# secret 必须来自环境变量；下面只是本地开发兜底值（32+ 字节），禁止用于生产环境。
+# 生产部署：设置 PANDAGO_JWT_SECRET 为一个足够长（>=32 字节）的随机字符串。
+pandago:
+  jwt:
+    secret: ${PANDAGO_JWT_SECRET:pandago-local-development-only-secret-key-please-change-me}
+    # 访问令牌有效期（毫秒），默认 24 小时
+    expiration-ms: ${PANDAGO_JWT_EXPIRATION_MS:86400000}
+  # 商品图片 URL 白名单（阶段 4）；尚未接入对象存储，禁止 data:/file:/javascript: 等协议
+  image:
+    allowed-url-prefixes:
+      - /images/
+      - http://
+      - https://
+    allowed-extensions:
+      - jpg
+      - jpeg
+      - png
+      - webp
+      - gif
+      - svg
+    max-url-length: 255
+    # 请求声明的最大字节数；真实文件字节校验需等待上传接口实现
+    max-image-bytes: 5242880
+  # 本地文件上传（头像）：文件不入库，数据库只保存相对 URL
+  upload:
+    base-dir: ${PANDAGO_UPLOAD_BASE_DIR:uploads}
+    max-avatar-bytes: 2097152
+  # Redis 缓存（阶段 9）：默认关闭，无 Redis 环境自动降级直查 MySQL。
+  # 生产/本地有 Redis 时设 PANDAGO_CACHE_ENABLED=true 并配置 spring.data.redis.*。
+  cache:
+    enabled: ${PANDAGO_CACHE_ENABLED:false}
+    key-prefix: ${PANDAGO_CACHE_KEY_PREFIX:pandago:}
+  # 超时未支付订单自动关闭（阶段 9）
+  order:
+    timeout:
+      # 支付超时时间（分钟）：created_at 早于 now-N 分钟仍未支付则关闭
+      minutes: ${PANDAGO_ORDER_TIMEOUT_MINUTES:30}
+      # 每次扫描最多处理订单数，分批避免长事务
+      batch-size: ${PANDAGO_ORDER_TIMEOUT_BATCH:100}
+      # 是否启用后台定时任务；测试可关闭后手动调用服务验证
+      schedule-enabled: ${PANDAGO_ORDER_TIMEOUT_SCHEDULE:true}
+      # 扫描周期（毫秒），默认 60 秒
+      fixed-delay-ms: ${PANDAGO_ORDER_TIMEOUT_DELAY:60000}
+      # 应用启动后首次扫描的延迟（毫秒），给服务留出就绪时间
+      initial-delay-ms: ${PANDAGO_ORDER_TIMEOUT_INITIAL_DELAY:60000}
+
+# Actuator 仅暴露健康检查端点，避免暴露敏感信息
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.pandago: DEBUG
+  pattern:
+    dateformat: yyyy-MM-dd HH:mm:ss.SSS
